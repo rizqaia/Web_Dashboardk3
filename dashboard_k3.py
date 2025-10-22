@@ -268,10 +268,20 @@ def input_data(df_man, df_acc, df_patrol):
             tanggal_close_val = data_lama.get("Tanggal Close", "")
             catatan_progress_val = data_lama.get("Catatan Progress", "")
             if status == "Close":
+                try:
+                    default_close_date = pd.to_datetime(tanggal_close_val).date() if pd.notna(pd.to_datetime(tanggal_close_val, errors="coerce")) else datetime.today().date()
+                except Exception:
+                    default_close_date = datetime.today().date()
+
                 tanggal_close = st.date_input("Tanggal Close", value=pd.to_datetime(tanggal_close_val) if tanggal_close_val else None)
                 catatan_progress = st.text_area("Catatan Progress", value=catatan_progress_val)
             else:
-                tanggal_close = st.date_input("Tanggal Close (opsional)", value=pd.to_datetime(tanggal_close_val) if tanggal_close_val else None)
+                try:
+                    default_close_date = pd.to_datetime(tanggal_close_val).date() if pd.notna(pd.to_datetime(tanggal_close_val, errors="coerce")) else datetime.today().date()
+                except Exception:
+                    default_close_date = datetime.today().date()
+
+                tanggal_close = st.date_input("Tanggal Close (opsional)", value=default_close_date)
                 catatan_progress = st.text_area("Catatan Progress (opsional)", value=catatan_progress_val)
             foto = st.file_uploader("Upload Foto Temuan (opsional)", type=["jpg", "jpeg", "png"], key="foto_update")
 
