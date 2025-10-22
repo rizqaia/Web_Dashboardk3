@@ -172,52 +172,84 @@ def dashboard(df_man, df_acc, df_patrol):
 # Input Data (Admin Only)
 # =========================
 def input_data(df_man, df_acc, df_patrol):
+    """Form input data Manhours, Accident, dan Safety Patrol (khusus Admin)."""
     if not st.session_state.get("logged_in", False):
         st.warning("Hanya admin yang bisa input data")
         return df_man, df_acc, df_patrol
 
     st.header("Input Data Harian")
-    tab1, tab2, tab3 = st.tabs(["Manhours","Accident","Safety Patrol"])
+    tab1, tab2, tab3 = st.tabs(["Manhours", "Accident", "Safety Patrol"])
 
-    # --- MANHOURS ---
+    # --- TAB 1: MANHOURS ---
     with tab1:
+        st.subheader("Input Data Manhours")
         tanggal = st.date_input("Tanggal")
-        manpower = st.number_input("Jumlah Pekerja", 0)
-        jam_kerja = st.number_input("Jam Kerja per Pekerja", 0)
+        manpower = st.number_input("Jumlah Pekerja", min_value=0, step=1)
+        jam_kerja = st.number_input("Jam Kerja per Pekerja", min_value=0, step=1)
         total = manpower * jam_kerja
-        if st.button("Simpan Manhours"):
-            new = pd.DataFrame([[tanggal,manpower,jam_kerja,total]], columns=df_man.columns)
-            df_man = pd.concat([df_man,new], ignore_index=True)
-            save_data(FILE_MANHOURS, df_man)
-            st.success("Data Manhours tersimpan!")
 
-    # --- ACCIDENT ---
+        if st.button("Simpan Manhours"):
+            new = pd.DataFrame([[tanggal, manpower, jam_kerja, total]], columns=df_man.columns)
+            df_man = pd.concat([df_man, new], ignore_index=True)
+            save_data(FILE_MANHOURS, df_man)
+            st.success("Data Manhours tersimpan")
+
+    # --- TAB 2: ACCIDENT ---
     with tab2:
+        st.subheader("Input Data Accident")
         tanggal = st.date_input("Tanggal Accident", key="acc")
-        jenis = st.selectbox("Jenis Accident", ["Fatality","LTI","MTC","FAC","Near Miss","Property Damage","PAK"])
+        jenis = st.selectbox("Jenis Accident", ["Fatality", "LTI", "MTC", "FAC", "Near Miss", "Property Damage", "PAK"])
         kronologi = st.text_area("Kronologi Singkat")
+
         if st.button("Simpan Accident"):
-            new = pd.DataFrame([[tanggal,jenis,kronologi]], columns=df_acc.columns)
-            df_acc = pd.concat([df_acc,new], ignore_index=True)
+            new = pd.DataFrame([[tanggal, jenis, kronologi]], columns=df_acc.columns)
+            df_acc = pd.concat([df_acc, new], ignore_index=True)
             save_data(FILE_ACCIDENT, df_acc)
-            st.success("Data Accident tersimpan!")
+            st.success("Data Accident tersimpan")
+
+    # --- TAB 3: SAFETY PATROL ---
+    with tab3:
+        st.subheader("Input Data Safety Patrol")
+        tanggal = st.date_input("Tanggal Patrol", key="patrol")
+        jenis_temuan = st.text_input("Jenis Temuan")
+        ditemukan_oleh = st.text_input("Ditemukan Oleh")
+        status = st.selectbox("Status", ["Open", "Close", "Progress"])
+        deskripsi = st.text_area("Deskripsi Temuan")
+        foto = st.file_uploader("Upload Foto Temuan (opsional)", type=["jpg", "jpeg", "png"])
+
+        if st.button("Simpan Data Patrol"):
+            foto_path = ""
+            if foto is not None:
+                if not os.path.exists("uploads"):
+                    os.makedirs("uploads")
+                foto_path = os.path.join("uploads", foto.name)
+                with open(foto_path, "wb") as f:
+                    f.write(foto.getbuffer())
+
+            new = pd.DataFrame([[tanggal, jenis_temuan, ditemukan_oleh, status, deskripsi, foto_path]], columns=df_patrol.columns)
+            df_patrol = pd.concat([df_patrol, new], ignore_index=True)
+            save_data(FILE_PATROL, df_patrol)
+            st.success("Data Safety Patrol tersimpan")
+
+    return df_man, df_acc, df_patrol
 
 # =========================
-# Data Manpower (Public)
+# Input Data Manpower (Admin Only)
 # =========================
 def input_data_manpower(df_manpower):
-    """Form input data jumlah pekerja per proyek"""
     st.header("📋 Input Data Manpower")
+
+    if not st.session_state.get("logged_in", False):
+        st.warning("Hanya admin yang bisa input data")
+        return df_manpower
 
     if df_manpower is None or df_manpower.empty:
         df_manpower = pd.DataFrame(columns=["Tanggal","Proyek","Jumlah Pekerja","Nama Pekerja"])
 
     tanggal = st.date_input("Tanggal", format="DD-MM-YYYY")
 
-    # === DROPDOWN PROYEK ===
     list_proyek = ["PT. GEA", "PT. Glico", "PT. Ciomas", "PT. Asahi", "Lainnya"]
     pilihan_proyek = st.selectbox("Nama Proyek / Lokasi", list_proyek)
-
     if pilihan_proyek == "Lainnya":
         proyek = st.text_input("Masukkan Nama Proyek / Lokasi Lainnya")
     else:
@@ -232,7 +264,7 @@ def input_data_manpower(df_manpower):
         else:
             new_row = pd.DataFrame(
                 [[tanggal, proyek, jumlah, nama_pekerja]],
-                columns=df_manpower.columns
+                columns=["Tanggal","Proyek","Jumlah Pekerja","Nama Pekerja"]
             )
             df_manpower = pd.concat([df_manpower, new_row], ignore_index=True)
             save_data(FILE_MANPOWER, df_manpower)
