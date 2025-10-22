@@ -262,8 +262,8 @@ def input_data(df_man, df_acc, df_patrol):
         foto_path = ""
         if foto is not None:
             foto_dir = "uploads/safety_patrol"
-    os.makedirs(foto_dir, exist_ok=True)
-    foto_path = os.path.join(foto_dir, foto.name)
+            os.makedirs(foto_dir, exist_ok=True)
+            foto_path = os.path.join(foto_dir, foto.name)
 
         # Jika foto kosong tapi data lama punya foto
         if selected_kode != "Tambah Data Baru" and not foto_path:
