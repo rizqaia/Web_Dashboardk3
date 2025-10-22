@@ -209,28 +209,100 @@ def input_data(df_man, df_acc, df_patrol):
 
     # --- TAB 3: SAFETY PATROL ---
     with tab3:
-        st.subheader("Input Data Safety Patrol")
-        tanggal = st.date_input("Tanggal Patrol", key="patrol")
-        jenis_temuan = st.text_input("Jenis Temuan")
+        st.subheader("📋 Input / Update Data Safety Patrol")
+
+    FILE_SAFETY_PATROL = FILE_PATROL  # pakai file yang sudah ada
+
+    # Pastikan folder upload ada
+    upload_dir = "uploads/safety_patrol"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Inisialisasi dataframe jika kosong
+    if df_patrol.empty:
+        df_patrol = pd.DataFrame(columns=[
+            "Kode Temuan", "Tanggal", "Jenis Temuan", "Ditemukan Oleh",
+            "Status", "Deskripsi", "Foto"
+        ])
+
+    # Dropdown kode lama
+    kode_options = ["Tambah Data Baru"] + df_patrol["Kode Temuan"].dropna().unique().tolist()
+    selected_kode = st.selectbox("Pilih Kode Temuan (untuk update data lama):", kode_options)
+
+    if selected_kode != "Tambah Data Baru":
+        data_lama = df_patrol[df_patrol["Kode Temuan"] == selected_kode].iloc[0]
+        kode_temuan = data_lama["Kode Temuan"]
+        tanggal = st.date_input("Tanggal", value=pd.to_datetime(data_lama["Tanggal"]))
+        jenis_temuan = st.selectbox("Jenis Temuan", ["Cara Kerja", "Environment", "Manpower"],
+                                    index=["Cara Kerja", "Environment", "Manpower"].index(data_lama["Jenis Temuan"]))
+        ditemukan_oleh = st.text_input("Ditemukan Oleh", value=data_lama["Ditemukan Oleh"])
+        status = st.selectbox("Status", ["Open", "Progress", "Close"],
+                            index=["Open", "Progress", "Close"].index(data_lama["Status"]))
+        deskripsi = st.text_area("Deskripsi Temuan", value=data_lama["Deskripsi"])
+        foto = st.file_uploader("Upload Foto Temuan (opsional)", type=["jpg", "jpeg", "png"], key="foto_update")
+
+        # Tampilkan foto lama (jika ada)
+        if data_lama["Foto"]:
+            st.image(data_lama["Foto"], caption="Foto Lama", width=250)
+
+    else:
+        kode_temuan = None
+        tanggal = st.date_input("Tanggal", format="DD-MM-YYYY")
+        jenis_temuan = st.selectbox("Jenis Temuan", ["Cara Kerja", "Environment", "Manpower"])
         ditemukan_oleh = st.text_input("Ditemukan Oleh")
-        status = st.selectbox("Status", ["Open", "Close", "Progress"])
+        status = st.selectbox("Status", ["Open", "Progress", "Close"])
         deskripsi = st.text_area("Deskripsi Temuan")
-        foto = st.file_uploader("Upload Foto Temuan (opsional)", type=["jpg", "jpeg", "png"])
+        foto = st.file_uploader("Upload Foto Temuan (opsional)", type=["jpg", "jpeg", "png"], key="foto_baru")
 
-        if st.button("Simpan Data Patrol"):
-            foto_path = ""
-            if foto is not None:
-                if not os.path.exists("uploads"):
-                    os.makedirs("uploads")
-                foto_path = os.path.join("uploads", foto.name)
-                with open(foto_path, "wb") as f:
-                    f.write(foto.getbuffer())
+    if st.button("💾 Simpan / Update Data Patrol"):
+        # Buat kode otomatis jika belum ada
+        if not kode_temuan:
+            nomor = len(df_patrol) + 1
+            kode_temuan = f"SP-{datetime.now().strftime('%Y%m%d')}-{nomor:03d}"
 
-            new = pd.DataFrame([[tanggal, jenis_temuan, ditemukan_oleh, status, deskripsi, foto_path]], columns=df_patrol.columns)
-            df_patrol = pd.concat([df_patrol, new], ignore_index=True)
-            save_data(FILE_PATROL, df_patrol)
-            st.success("Data Safety Patrol tersimpan")
+        foto_path = ""
+        if foto is not None:
+            ext = os.path.splitext(foto.name)[1]
+            foto_path = os.path.join(upload_dir, f"{kode_temuan}{ext}")
+            with open(foto_path, "wb") as f:
+                f.write(foto.getbuffer())
 
+        # Jika foto kosong tapi data lama punya foto
+        if selected_kode != "Tambah Data Baru" and not foto_path:
+            foto_path = data_lama["Foto"]
+
+        new_data = pd.DataFrame([{
+            "Kode Temuan": kode_temuan,
+            "Tanggal": tanggal,
+            "Jenis Temuan": jenis_temuan,
+            "Ditemukan Oleh": ditemukan_oleh,
+            "Status": status,
+            "Deskripsi": deskripsi,
+            "Foto": foto_path
+        }])
+
+        if kode_temuan in df_patrol["Kode Temuan"].values:
+            df_patrol.loc[df_patrol["Kode Temuan"] == kode_temuan, :] = new_data.values[0]
+            st.success(f"✅ Data {kode_temuan} berhasil diperbarui!")
+        else:
+            df_patrol = pd.concat([df_patrol, new_data], ignore_index=True)
+            st.success(f"✅ Data baru {kode_temuan} berhasil disimpan!")
+
+        save_data(FILE_SAFETY_PATROL, df_patrol)
+
+    st.markdown("---")
+    st.subheader("📥 Unduh Data Safety Patrol")
+    if not df_patrol.empty:
+        output = io.BytesIO()
+        df_patrol.to_excel(output, index=False, sheet_name="Safety Patrol")
+        output.seek(0)
+        st.download_button(
+            label="💾 Download Data Safety Patrol (Excel)",
+            data=output,
+            file_name=f"data_safety_patrol_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.info("Belum ada data Safety Patrol untuk diunduh.")
     return df_man, df_acc, df_patrol
 
 # =========================
