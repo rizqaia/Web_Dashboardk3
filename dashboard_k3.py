@@ -5,6 +5,15 @@ from datetime import datetime
 import os
 import io
 
+# Optional libs for embedding images into Excel
+try:
+    from openpyxl import Workbook
+    from openpyxl.drawing.image import Image as XLImage
+    from PIL import Image as PILImage
+    HAS_IMG_TO_EXCEL = True
+except Exception:
+    HAS_IMG_TO_EXCEL = False
+
 # =========================
 # File CSV
 # =========================
@@ -30,6 +39,10 @@ def load_data(file, columns=None):
         return pd.DataFrame(columns=columns if columns else [])
 
 def save_data(file, df):
+    # Pastikan folder ada jika file berada di subfolder
+    dirname = os.path.dirname(file)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
     df.to_csv(file, index=False)
 
 # =========================
@@ -59,12 +72,12 @@ def dashboard(df_man, df_acc, df_patrol):
         """
         <style>
         .stApp { background-color: #C2B280; }
-        div.stButton > button { 
-            background-color: #800000; 
-            color: #FFFDD0; 
-            border-radius: 10px; 
-            padding: 8px 20px; 
-            font-size: 14px; font-weight:bold; 
+        div.stButton > button {
+            background-color: #800000;
+            color: #FFFDD0;
+            border-radius: 10px;
+            padding: 8px 20px;
+            font-size: 14px; font-weight:bold;
         }
         div.stButton > button:hover { background-color:#A0522D; color:white;}
         </style>
@@ -79,12 +92,13 @@ def dashboard(df_man, df_acc, df_patrol):
     # kumpulkan tahun dari semua dataset (jika kolom Tanggal ada)
     years = set()
     for df in [df_man, df_acc, df_patrol]:
-        if not df.empty and "Tanggal" in df.columns:
+        if df is not None and not df.empty and "Tanggal" in df.columns:
             years.update(list(df["Tanggal"].dropna().astype(str).str[:4]))
     filter_tahun = st.selectbox("Filter Tahun", ["All"] + sorted(years))
 
     def apply_filter(df):
-        if not df.empty and "Tanggal" in df.columns:
+        if df is not None and not df.empty and "Tanggal" in df.columns:
+            df = df.copy()
             df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
             df["Bulan"] = df["Tanggal"].dt.strftime("%b")
             df["Tahun"] = df["Tanggal"].dt.strftime("%Y")
@@ -99,7 +113,7 @@ def dashboard(df_man, df_acc, df_patrol):
     df_patrol = apply_filter(df_patrol)
 
     # ---------------- MANHOURS ----------------
-    if not df_man.empty and "Total Manhours" in df_man.columns:
+    if df_man is not None and not df_man.empty and "Total Manhours" in df_man.columns:
         today = datetime.now().date()
         total_today = df_man[df_man['Tanggal'].dt.date == today]['Total Manhours'].sum()
         total_all = df_man['Total Manhours'].sum()
@@ -120,7 +134,7 @@ def dashboard(df_man, df_acc, df_patrol):
             st.plotly_chart(fig, use_container_width=True)
 
     # ---------------- ACCIDENT ----------------
-    if not df_acc.empty and "Jenis" in df_acc.columns:
+    if df_acc is not None and not df_acc.empty and "Jenis" in df_acc.columns:
         st.subheader("Accident per Jenis")
         acc_count = df_acc["Jenis"].value_counts().reset_index()
         acc_count.columns = ["Jenis","Count"]
@@ -136,6 +150,7 @@ def dashboard(df_man, df_acc, df_patrol):
 
         # Line chart accident per bulan
         if "Tanggal" in df_acc.columns:
+            df_acc = df_acc.copy()
             df_acc["Bulan"] = df_acc["Tanggal"].dt.strftime("%b")
             acc_per_bulan = df_acc.groupby("Bulan").size().reset_index(name="Jumlah")
             if not acc_per_bulan.empty:
@@ -151,7 +166,7 @@ def dashboard(df_man, df_acc, df_patrol):
                 st.plotly_chart(fig_line, use_container_width=True)
 
     # ---------------- SAFETY PATROL ----------------
-    if not df_patrol.empty and "Status" in df_patrol.columns:
+    if df_patrol is not None and not df_patrol.empty and "Status" in df_patrol.columns:
         st.subheader("Safety Patrol - Status")
         status_count = df_patrol["Status"].value_counts().reset_index()
         status_count.columns = ["Status","Count"]
@@ -185,7 +200,7 @@ def input_data(df_man, df_acc, df_patrol):
         st.subheader("Input Data Manhours")
 
         # Pastikan kolom ada
-        if df_man.empty or list(df_man.columns) != ["Tanggal", "Manpower", "Jam Kerja", "Total Manhours"]:
+        if df_man is None or df_man.empty or list(df_man.columns) != ["Tanggal", "Manpower", "Jam Kerja", "Total Manhours"]:
             df_man = pd.DataFrame(columns=["Tanggal", "Manpower", "Jam Kerja", "Total Manhours"])
 
         tanggal = st.date_input("Tanggal", key="man_tgl")
@@ -194,8 +209,7 @@ def input_data(df_man, df_acc, df_patrol):
         total = manpower * jam_kerja
 
         if st.button("Simpan Manhours"):
-            new = pd.DataFrame([[tanggal, manpower, jam_kerja, total]],
-                               columns=df_man.columns)
+            new = pd.DataFrame([[tanggal, manpower, jam_kerja, total]], columns=df_man.columns)
             df_man = pd.concat([df_man, new], ignore_index=True)
             save_data(FILE_MANHOURS, df_man)
             st.success("✅ Data Manhours tersimpan")
@@ -204,7 +218,7 @@ def input_data(df_man, df_acc, df_patrol):
     with tab2:
         st.subheader("Input Data Accident")
 
-        if df_acc.empty or list(df_acc.columns) != ["Tanggal", "Jenis", "Kronologi"]:
+        if df_acc is None or df_acc.empty or list(df_acc.columns) != ["Tanggal", "Jenis", "Kronologi"]:
             df_acc = pd.DataFrame(columns=["Tanggal", "Jenis", "Kronologi"])
 
         tanggal = st.date_input("Tanggal Accident", key="acc_tgl")
@@ -224,85 +238,197 @@ def input_data(df_man, df_acc, df_patrol):
         FILE_SAFETY_PATROL = FILE_PATROL
         os.makedirs("uploads/safety_patrol", exist_ok=True)
 
-        # Pastikan kolom ada
-        if df_patrol.empty or "Kode Temuan" not in df_patrol.columns:
-            df_patrol = pd.DataFrame(columns=[
-                "Kode Temuan", "Tanggal", "Jenis Temuan", "Ditemukan Oleh",
-                "Status", "Deskripsi", "Foto"
-            ])
+        # Pastikan kolom ada (tambahkan kolom Tanggal Close & Catatan Progress bila belum ada)
+        required_cols = ["Kode Temuan", "Tanggal", "Jenis Temuan", "Ditemukan Oleh",
+                         "Status", "Deskripsi", "Foto", "Tanggal Close", "Catatan Progress"]
+        if df_patrol is None or df_patrol.empty:
+            df_patrol = pd.DataFrame(columns=required_cols)
+        else:
+            # jika kolom belum lengkap, tambahkan kolom kosong
+            for c in required_cols:
+                if c not in df_patrol.columns:
+                    df_patrol[c] = ""
 
+        # Dropdown kode lama (jika ada)
         kode_options = ["Tambah Data Baru"] + df_patrol["Kode Temuan"].dropna().unique().tolist()
-        selected_kode = st.selectbox("Pilih Kode Temuan:", kode_options)
+        selected_kode = st.selectbox("Pilih Kode Temuan (untuk update data lama):", kode_options)
 
         if selected_kode != "Tambah Data Baru":
+            # ambil baris pertama yang cocok
             data_lama = df_patrol[df_patrol["Kode Temuan"] == selected_kode].iloc[0]
             kode_temuan = data_lama["Kode Temuan"]
             tanggal = st.date_input("Tanggal", value=pd.to_datetime(data_lama["Tanggal"]))
             jenis_temuan = st.selectbox("Jenis Temuan", ["Cara Kerja", "Environment", "Manpower"],
-                                        index=["Cara Kerja", "Environment", "Manpower"].index(data_lama["Jenis Temuan"]))
+                                        index=["Cara Kerja", "Environment", "Manpower"].index(data_lama["Jenis Temuan"]) if data_lama["Jenis Temuan"] in ["Cara Kerja", "Environment", "Manpower"] else 0)
             ditemukan_oleh = st.text_input("Ditemukan Oleh", value=data_lama["Ditemukan Oleh"])
             status = st.selectbox("Status", ["Open", "Progress", "Close"],
-                                  index=["Open", "Progress", "Close"].index(data_lama["Status"]))
+                                  index=["Open", "Progress", "Close"].index(data_lama["Status"]) if data_lama["Status"] in ["Open", "Progress", "Close"] else 0)
             deskripsi = st.text_area("Deskripsi Temuan", value=data_lama["Deskripsi"])
-            foto = st.file_uploader("Upload Foto (opsional)", type=["jpg", "jpeg", "png"], key="foto_update")
+            # tanggal close & catatan progress
+            tanggal_close_val = data_lama.get("Tanggal Close", "")
+            catatan_progress_val = data_lama.get("Catatan Progress", "")
+            if status == "Close":
+                tanggal_close = st.date_input("Tanggal Close", value=pd.to_datetime(tanggal_close_val) if tanggal_close_val else None)
+                catatan_progress = st.text_area("Catatan Progress", value=catatan_progress_val)
+            else:
+                tanggal_close = st.date_input("Tanggal Close (opsional)", value=pd.to_datetime(tanggal_close_val) if tanggal_close_val else None)
+                catatan_progress = st.text_area("Catatan Progress (opsional)", value=catatan_progress_val)
+            foto = st.file_uploader("Upload Foto Temuan (opsional)", type=["jpg", "jpeg", "png"], key="foto_update")
 
-            if data_lama["Foto"]:
-                st.image(data_lama["Foto"], caption="Foto Lama", width=250)
+            # tampilkan foto lama bila ada path valid
+            try:
+                if data_lama["Foto"] and isinstance(data_lama["Foto"], str) and os.path.exists(data_lama["Foto"]):
+                    st.image(data_lama["Foto"], caption="Foto Lama", width=250)
+            except Exception:
+                pass
+
         else:
             kode_temuan = None
-            tanggal = st.date_input("Tanggal", format="DD-MM-YYYY", key="new_tgl")
-            jenis_temuan = st.selectbox("Jenis Temuan", ["Cara Kerja", "Environment", "Manpower"], key="new_jenis")
-            ditemukan_oleh = st.text_input("Ditemukan Oleh", key="new_ditemukan")
-            status = st.selectbox("Status", ["Open", "Progress", "Close"], key="new_status")
-            deskripsi = st.text_area("Deskripsi Temuan", key="new_desc")
-            foto = st.file_uploader("Upload Foto (opsional)", type=["jpg", "jpeg", "png"], key="new_foto")
+            tanggal = st.date_input("Tanggal", format="DD-MM-YYYY")
+            jenis_temuan = st.selectbox("Jenis Temuan", ["Cara Kerja", "Environment", "Manpower"])
+            ditemukan_oleh = st.text_input("Ditemukan Oleh")
+            status = st.selectbox("Status", ["Open", "Progress", "Close"])
+            deskripsi = st.text_area("Deskripsi Temuan")
+            tanggal_close = None
+            catatan_progress = ""
+            foto = st.file_uploader("Upload Foto Temuan (opsional)", type=["jpg", "jpeg", "png"], key="foto_baru")
 
+        # Simpan / Update
         if st.button("💾 Simpan / Update Data Patrol"):
+            # buat kode otomatis bila baru
             if not kode_temuan:
-                kode_temuan = f"SP-{datetime.now().strftime('%Y%m%d')}-{len(df_patrol)+1:03d}"
+                nomor = len(df_patrol) + 1
+                kode_temuan = f"SP-{datetime.now().strftime('%Y%m%d')}-{nomor:03d}"
 
             foto_path = ""
             if foto is not None:
+                # simpan file ke uploads/safety_patrol dan beri nama berdasarkan kode
                 foto_dir = "uploads/safety_patrol"
                 os.makedirs(foto_dir, exist_ok=True)
-                foto_path = os.path.join(foto_dir, foto.name)
+                ext = os.path.splitext(foto.name)[1]
+                foto_name = f"{kode_temuan}{ext}"
+                foto_path = os.path.join(foto_dir, foto_name)
                 with open(foto_path, "wb") as f:
                     f.write(foto.getbuffer())
 
+            # jika update tapi tidak upload foto baru, gunakan foto lama (jika ada)
             if selected_kode != "Tambah Data Baru" and not foto_path:
-                foto_path = data_lama["Foto"]
+                foto_path = data_lama.get("Foto", "")
 
-            new_data = pd.DataFrame([{
+            # format tanggal_close to string for CSV
+            tanggal_close_str = ""
+            if tanggal_close:
+                try:
+                    tanggal_close_str = pd.to_datetime(tanggal_close).strftime("%Y-%m-%d")
+                except Exception:
+                    tanggal_close_str = str(tanggal_close)
+
+            new_row = {
                 "Kode Temuan": kode_temuan,
-                "Tanggal": tanggal,
+                "Tanggal": pd.to_datetime(tanggal).strftime("%Y-%m-%d") if pd.notna(pd.to_datetime(tanggal)) else "",
                 "Jenis Temuan": jenis_temuan,
                 "Ditemukan Oleh": ditemukan_oleh,
                 "Status": status,
                 "Deskripsi": deskripsi,
-                "Foto": foto_path
-            }])
+                "Foto": foto_path,
+                "Tanggal Close": tanggal_close_str,
+                "Catatan Progress": catatan_progress if catatan_progress else ""
+            }
 
             if kode_temuan in df_patrol["Kode Temuan"].values:
-                df_patrol.loc[df_patrol["Kode Temuan"] == kode_temuan, :] = new_data.values[0]
+                # update existing row
+                idx = df_patrol[df_patrol["Kode Temuan"] == kode_temuan].index[0]
+                for k, v in new_row.items():
+                    df_patrol.at[idx, k] = v
                 st.success(f"✅ Data {kode_temuan} berhasil diperbarui!")
             else:
-                df_patrol = pd.concat([df_patrol, new_data], ignore_index=True)
+                # append new
+                df_patrol = pd.concat([df_patrol, pd.DataFrame([new_row])], ignore_index=True)
                 st.success(f"✅ Data baru {kode_temuan} berhasil disimpan!")
 
             save_data(FILE_SAFETY_PATROL, df_patrol)
 
+        # Download Excel (dengan gambar jika tersedia)
         st.markdown("---")
-        st.subheader("📥 Unduh Data Safety Patrol")
+        st.subheader("📥 Unduh Data Safety Patrol (Excel)")
+
         if not df_patrol.empty:
-            output = io.BytesIO()
-            df_patrol.to_excel(output, index=False, sheet_name="Safety Patrol")
-            output.seek(0)
-            st.download_button(
-                label="💾 Download Data Safety Patrol (Excel)",
-                data=output,
-                file_name=f"data_safety_patrol_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            if HAS_IMG_TO_EXCEL:
+                try:
+                    wb = Workbook()
+                    ws = wb.active
+                    ws.title = "Safety Patrol"
+
+                    headers = ["Kode Temuan", "Tanggal", "Jenis Temuan", "Ditemukan Oleh",
+                               "Status", "Deskripsi", "Foto", "Tanggal Close", "Catatan Progress"]
+                    ws.append(headers)
+
+                    for _, row in df_patrol.iterrows():
+                        # tulis teks (kosong di kolom foto, gambar akan dimasukkan next)
+                        ws.append([
+                            row.get("Kode Temuan", ""),
+                            str(row.get("Tanggal", "")),
+                            row.get("Jenis Temuan", ""),
+                            row.get("Ditemukan Oleh", ""),
+                            row.get("Status", ""),
+                            row.get("Deskripsi", ""),
+                            "",  # placeholder untuk gambar
+                            row.get("Tanggal Close", ""),
+                            row.get("Catatan Progress", "")
+                        ])
+
+                        current_row = ws.max_row
+                        foto_path = str(row.get("Foto", "")).strip()
+                        if foto_path and os.path.exists(foto_path):
+                            try:
+                                # resize image sementara
+                                img = PILImage.open(foto_path)
+                                img.thumbnail((150, 150))
+                                temp_path = os.path.join("uploads", "temp_resized.jpg")
+                                img.save(temp_path, "JPEG", quality=70)
+
+                                img_xl = XLImage(temp_path)
+                                # insert image into column G (7th col = 'G')
+                                img_cell = f"G{current_row}"
+                                ws.add_image(img_xl, img_cell)
+                            except Exception:
+                                # skip image on failure
+                                pass
+
+                    output = io.BytesIO()
+                    wb.save(output)
+                    output.seek(0)
+
+                    st.download_button(
+                        label="💾 Download Data Safety Patrol (Excel dengan Foto)",
+                        data=output,
+                        file_name=f"data_safety_patrol_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                except Exception as e:
+                    # fallback ke simple excel
+                    output = io.BytesIO()
+                    df_patrol.to_excel(output, index=False, sheet_name="Safety Patrol")
+                    output.seek(0)
+                    st.warning("Gagal membuat Excel dengan gambar (library mungkin tidak lengkap). Mengunduh data tanpa gambar.")
+                    st.download_button(
+                        label="💾 Download Data Safety Patrol (Excel, tanpa gambar)",
+                        data=output,
+                        file_name=f"data_safety_patrol_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+            else:
+                # tidak ada openpyxl / pillow -> fallback
+                output = io.BytesIO()
+                df_patrol.to_excel(output, index=False, sheet_name="Safety Patrol")
+                output.seek(0)
+                st.info("Fitur embedding foto ke Excel memerlukan 'openpyxl' dan 'Pillow'. Mengunduh Excel tanpa gambar.")
+                st.download_button(
+                    label="💾 Download Data Safety Patrol (Excel, tanpa gambar)",
+                    data=output,
+                    file_name=f"data_safety_patrol_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         else:
             st.info("Belum ada data Safety Patrol untuk diunduh.")
 
@@ -353,7 +479,7 @@ def input_data_manpower(df_manpower):
 def dashboard_manpower(df_manpower):
     st.header("📊 Dashboard Manpower")
 
-    if df_manpower.empty:
+    if df_manpower is None or df_manpower.empty:
         st.info("Belum ada data manpower.")
         return
 
@@ -379,14 +505,20 @@ def dashboard_manpower(df_manpower):
     # Grafik
     if selected_bulan != "All":
         chart = df_filtered.groupby("Tanggal")["Jumlah Pekerja"].sum().reset_index()
-        fig = px.bar(chart, x="Tanggal", y="Jumlah Pekerja", color_discrete_sequence=["#800000"])
-        st.subheader("Jumlah Pekerja per Hari")
-        st.plotly_chart(fig, use_container_width=True)
+        if chart.empty:
+            st.warning("Tidak ada data untuk grafik harian dengan filter saat ini.")
+        else:
+            fig = px.bar(chart, x="Tanggal", y="Jumlah Pekerja", color_discrete_sequence=["#800000"])
+            st.subheader("Jumlah Pekerja per Hari")
+            st.plotly_chart(fig, use_container_width=True)
     else:
         chart = df_filtered.groupby("Bulan")["Jumlah Pekerja"].sum().reset_index()
-        fig = px.bar(chart, x="Bulan", y="Jumlah Pekerja", color_discrete_sequence=["#800000"])
-        st.subheader("Jumlah Pekerja per Bulan")
-        st.plotly_chart(fig, use_container_width=True)
+        if chart.empty:
+            st.warning("Tidak ada data untuk grafik bulanan dengan filter saat ini.")
+        else:
+            fig = px.bar(chart, x="Bulan", y="Jumlah Pekerja", color_discrete_sequence=["#800000"])
+            st.subheader("Jumlah Pekerja per Bulan")
+            st.plotly_chart(fig, use_container_width=True)
 
     # Download
     st.markdown("---")
@@ -436,7 +568,6 @@ def dokumen_pdf():
                 )
     else:
         st.info("Belum ada file PDF yang diupload.")
-
 
 # =========================
 # MAIN
